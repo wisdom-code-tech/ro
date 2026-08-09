@@ -9,7 +9,10 @@
 
 - [特性](#特性)
 - [架构与技术选型](#架构与技术选型)
-- [快速开始（Docker）](#快速开始docker)
+- [部署方式](#部署方式)
+  - [方式一：Docker 镜像（最简单，推荐）](#方式一docker-镜像最简单推荐)
+  - [方式二：Docker Compose 从源码构建](#方式二docker-compose-从源码构建)
+  - [方式三：本地部署（Node.js）](#方式三本地部署nodejs)
 - [配置说明（config.yaml）](#配置说明configyaml)
 - [音源管理](#音源管理)
 - [跨平台换源机制](#跨平台换源机制)
@@ -18,6 +21,7 @@
 - [鉴权与 API Key](#鉴权与-api-key)
 - [健康冒烟测试](#健康冒烟测试)
 - [内存占用](#内存占用)
+- [Docker 镜像说明](#docker-镜像说明)
 - [外部控制：局域网 vs 公网](#外部控制局域网-vs-公网)
 - [常见问题 / 排错](#常见问题--排错)
 
@@ -81,39 +85,140 @@ ro/
 
 ---
 
-## 快速开始（Docker）
+## 部署方式
 
-### 前置
+提供三种部署方式，按从简到繁排列。**推荐方式一**（直接拉预构建镜像，无需本地编译）。
 
-- Docker + Docker Compose
-- 至少一个 lx-music 音源脚本（`.js`），放进 `data/sources/`
+所有方式启动后都访问 `http://<服务器IP>:23330/`，用 `config.yaml` 里的用户名/密码登录。
 
-### 一键起服务
+> **通用前置**：至少准备一个 lx-music 音源脚本（`.js`），放进 `data/sources/`（或启动后在 Web 音源页导入）。
+
+---
+
+### 方式一：Docker 镜像（最简单，推荐）
+
+直接从 Docker Hub 拉取预构建的多架构镜像（`linux/amd64` + `linux/arm64`），无需本地构建工具链。
+
+**镜像地址**：[`a914599611/ro-music`](https://hub.docker.com/r/a914599611/ro-music)
 
 ```bash
-cd ro
+# 1. 准备目录与配置
+mkdir -p ro/data/downloads ro/data/sources ro/data/db && cd ro
+# 下载配置模板（或手写 config.yaml，见配置说明）
+curl -fsSL https://raw.githubusercontent.com/leizi914599611-boop/ro/main/config.example.yaml -o config.yaml
+# 编辑 config.yaml，至少设一个登录密码（auth.webLogin.password）
 
-# 1. 编辑 config.yaml，至少设一个登录密码（见下方配置说明）
-
-# 2. 构建并启动
-docker compose build
-docker compose up -d
+# 2. 拉取并运行（Docker 会自动匹配当前 CPU 架构）
+docker run -d --name ro \
+  --restart unless-stopped \
+  -p 23330:23330 \
+  -e TZ=Asia/Shanghai \
+  -v "$PWD/config.yaml:/app/config.yaml" \
+  -v "$PWD/data/downloads:/app/data/downloads" \
+  -v "$PWD/data/sources:/app/data/sources" \
+  -v "$PWD/data/db:/app/data/db" \
+  --memory 512m \
+  a914599611/ro-music:latest
 
 # 3. 查看状态
-docker compose ps           # 应为 Up (healthy)
+docker ps                   # STATUS 应为 Up (healthy)
 docker logs -f ro           # 看启动日志
 ```
 
-启动后访问 `http://<服务器IP>:23330/`，用 `config.yaml` 里配置的用户名/密码登录。
+**或用 Compose 拉镜像**（把 compose.yaml 里 `build:` 段换成 `image:`）：
 
-> **端口**：默认 `23330`，由 compose 的 `ports` 与 `RO_SERVER_PORT` 控制。
-> **数据持久化**：`config.yaml` 和 `data/{downloads,sources,db}` 都映射到宿主机，容器重建不丢历史。
+```yaml
+services:
+  ro:
+    image: a914599611/ro-music:latest   # 不再本地构建，直接拉镜像
+    container_name: ro
+    restart: unless-stopped
+    ports:
+      - "23330:23330"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data/downloads:/app/data/downloads
+      - ./data/sources:/app/data/sources
+      - ./data/db:/app/data/db
+    mem_limit: 512m
+```
 
-### 更新代码后重建
+```bash
+docker compose up -d
+```
 
+**升级到新版本**：
+```bash
+docker pull a914599611/ro-music:latest
+docker compose up -d          # 或 docker rm -f ro 后重跑 docker run
+```
+
+---
+
+### 方式二：Docker Compose 从源码构建
+
+想自己改代码、或不信任预构建镜像时，用仓库自带的 Dockerfile 本地构建（多阶段构建，原生模块在容器内编译，宿主机无需 g++）。
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/leizi914599611-boop/ro.git && cd ro
+
+# 2. 准备配置
+cp config.example.yaml config.yaml
+# 编辑 config.yaml，至少设一个登录密码
+
+# 3. 构建并启动
+docker compose build
+docker compose up -d
+
+# 4. 查看状态
+docker compose ps           # 应为 Up (healthy)
+docker logs -f ro
+```
+
+**改代码后重建**：
 ```bash
 docker compose build && docker compose up -d
 ```
+
+---
+
+### 方式三：本地部署（Node.js）
+
+不想用 Docker、直接在宿主机跑。**注意**：`better-sqlite3` / `sharp` 是原生模块，`npm install` 时会本地编译，需要构建工具链（Debian/Ubuntu：`apt install -y build-essential python3`）。
+
+```bash
+# 前置：Node.js >= 20（推荐 22）
+
+# 1. 克隆并进入 server
+git clone https://github.com/leizi914599611-boop/ro.git && cd ro
+cp config.example.yaml config.yaml
+# 编辑 config.yaml，至少设一个登录密码
+
+cd server
+
+# 2. 装依赖（会本地编译原生模块；国内可用镜像加速）
+npm config set registry https://registry.npmmirror.com
+npm install
+
+# 3. 编译 TypeScript
+npm run build
+
+# 4. 启动（在项目根目录读 config.yaml）
+npm start                   # = node dist/index.js
+```
+
+**开发模式**（热重载，不用先 build）：
+```bash
+cd server && npm run dev     # tsx watch src/index.ts
+```
+
+数据默认落在项目根的 `data/` 下。可用环境变量 `RO_SERVER_PORT` / `RO_CONFIG` / `RO_DB_DIR` 覆盖路径（见下）。
+
+> **端口**：默认 `23330`。
+> **数据持久化**：`config.yaml` 和 `data/{downloads,sources,db}`；Docker 方式已 volume 映射到宿主机，容器重建不丢历史。
 
 ---
 
@@ -377,6 +482,64 @@ curl -H 'x-api-key: ro_xxxx' 'http://<IP>:23330/api/v1/search?keyword=晴天&pla
 ## 内存占用
 
 实测稳定 **RSS ≈ 198MB**（目标 <300MB 达标）。compose 里设了 `mem_limit: 512m` 留足余量。低占用得益于用 SQLite + p-queue 替代 Redis/BullMQ。
+
+---
+
+## Docker 镜像说明
+
+**镜像仓库**：[`a914599611/ro-music`](https://hub.docker.com/r/a914599611/ro-music)（Docker Hub）
+
+### 标签（Tags）
+
+| 标签 | 说明 |
+|---|---|
+| `latest` | 最新稳定版，跟随 `main` 分支 |
+| `0.1.0` | 固定版本号（语义化版本），生产环境建议锁定具体版本 |
+
+### 支持架构
+
+多架构镜像（manifest list），`docker pull` / `docker run` 会**自动匹配当前 CPU 架构**：
+
+- `linux/amd64`（x86_64 服务器 / PC）
+- `linux/arm64`（Apple Silicon、树莓派 4/5、ARM 云主机等）
+
+### 镜像内部结构
+
+多阶段构建产出精简运行镜像：
+
+- **基础镜像**：`node:22-bookworm-slim`（运行阶段）
+- **工作目录**：`/app/server`，入口 `node dist/index.js`
+- **暴露端口**：`23330`
+- **内置健康检查**：每 30s 探测 `/api/v1/status`（鉴权开启返回 401 也算存活，仅连接失败判宕机）
+- **预置环境变量**：`NODE_ENV=production`、`TZ=Asia/Shanghai`、`RO_SERVER_HOST=0.0.0.0`、`RO_SERVER_PORT=23330`、`RO_DB_DIR=/app/data/db`
+
+### 需要挂载的卷（volume）
+
+镜像**不含**任何配置和数据（干净镜像），运行时通过 volume 注入：
+
+| 容器内路径 | 用途 | 是否必需 |
+|---|---|---|
+| `/app/config.yaml` | 配置文件（用户名/密码/apiKey/各项设置）| **必需** |
+| `/app/data/downloads` | 下载的音乐文件 | 建议 |
+| `/app/data/sources` | lx-music 音源脚本(.js) | **必需**（否则无音源）|
+| `/app/data/db` | SQLite（任务记录/歌单）| 建议（否则重建容器丢历史）|
+
+> **镜像不含密钥**：镜像里没有任何 `config.yaml` 或 `data/`（`.dockerignore` 已排除），密码/apiKey 完全由你挂载的 `config.yaml` 提供，公开镜像不泄露任何凭据。
+
+### 自己构建并推送多架构镜像
+
+```bash
+# 一次性准备（注册 QEMU 跨架构模拟 + 创建 buildx builder）
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+docker buildx create --name robuilder --driver docker-container --use
+
+# 构建 amd64 + arm64 并推送
+docker login -u <你的用户名>
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t <你的用户名>/ro-music:0.1.0 \
+  -t <你的用户名>/ro-music:latest \
+  --push .
+```
 
 ---
 
