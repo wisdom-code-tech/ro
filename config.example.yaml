@@ -6,7 +6,7 @@ auth:
   apiKey: ""
   webLogin:
     username: admin
-    password: ""
+    password: "admin"
 download:
   dir: data/downloads
   concurrency: 3
