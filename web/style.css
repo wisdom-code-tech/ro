@@ -15,6 +15,20 @@ main { max-width: 960px; margin: 20px auto; padding: 0 16px; }
 .search-bar button, .toolbar button { padding: 9px 18px; background: #1f6feb; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
 .search-bar button:hover, .toolbar button:hover { background: #1a5fcc; }
 .toolbar button:disabled { background: #b6c6e0; cursor: not-allowed; }
+.toolbar select, .toolbar input[type=search] { padding: 8px 9px; border: 1px solid #d0d3d9; border-radius: 7px; background: #fff; }
+.library-toolbar { gap: 8px; flex-wrap: wrap; }
+.library-toolbar input[type=search] { flex: 1; min-width: 150px; }
+.stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 12px; }
+.stat-card { background: #fff; border: 1px solid #e6e8ec; border-radius: 8px; padding: 12px; }
+.stat-card b { display: block; font-size: 20px; margin-bottom: 3px; }
+.stat-card span { color: #777; font-size: 12px; }
+.quality.lossy_low { background: #fde0e0; color: #b42318; }
+.quality.lossy_standard, .quality.lossy_high { background: #fff4e0; color: #996000; }
+.quality.lossless_cd { background: #e3f7e8; color: #1a7f37; }
+.quality.lossless_hires { background: #e0f0ff; color: #1560bd; }
+.quality.unknown { background: #eee; color: #666; }
+#library-tracks .path { display: block; color: #999; font-size: 11px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) { .stat-grid { grid-template-columns: repeat(3, 1fr); } header { align-items: flex-start; } nav { flex-wrap: wrap; } }
 
 .toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; padding: 10px 12px; background: #fff; border-radius: 8px; border: 1px solid #e6e8ec; }
 .chk-all { font-size: 14px; cursor: pointer; user-select: none; }

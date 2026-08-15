@@ -12,6 +12,7 @@
     <nav>
       <a href="#" class="tab active" data-tab="search">搜索</a>
       <a href="#" class="tab" data-tab="tasks">下载任务</a>
+      <a href="#" class="tab" data-tab="library">音乐库</a>
       <a href="#" class="tab" data-tab="sources">音源管理</a>
       <a href="#" class="tab" data-tab="playlists">歌单</a>
       <a href="#" class="tab" data-tab="settings">设置</a>
@@ -64,6 +65,38 @@
         <span id="tasks-summary"></span>
       </div>
       <div id="tasks"></div>
+    </section>
+
+    <!-- 音乐库页 -->
+    <section id="view-library" class="view">
+      <div id="library-stats" class="stat-grid"></div>
+      <div class="toolbar library-toolbar">
+        <button id="scan-library">扫描音乐库</button>
+        <button id="refresh-library">刷新</button>
+        <select id="library-format">
+          <option value="">全部格式</option><option value="mp3">MP3</option><option value="flac">FLAC</option>
+        </select>
+        <select id="library-quality">
+          <option value="">全部品质</option>
+          <option value="lossy_low">低品质 MP3</option><option value="lossy_standard">普通 MP3</option>
+          <option value="lossy_high">高品质 MP3</option><option value="lossless_cd">CD 无损</option>
+          <option value="lossless_hires">Hi-Res</option><option value="unknown">未知</option>
+        </select>
+        <select id="library-upgrade-status">
+          <option value="">全部状态</option><option value="recommended">建议升级</option>
+          <option value="matched">已匹配</option><option value="queued">升级中</option>
+          <option value="upgraded">已升级</option><option value="failed">升级失败</option>
+        </select>
+        <input type="search" id="library-keyword" placeholder="歌曲 / 歌手 / 专辑" />
+      </div>
+      <div class="toolbar" id="library-batch-toolbar">
+        <label class="chk-all"><input type="checkbox" id="library-check-all" /> 全选当前页</label>
+        <span id="library-selected-count">已选 0 首</span>
+        <button id="library-batch-upgrade" disabled>匹配并升级选中</button>
+        <select id="library-target-quality"><option value="flac">升级为 FLAC</option><option value="flac24bit">升级为 Hi-Res</option></select>
+      </div>
+      <div id="library-scan-status" class="status"></div>
+      <div id="library-tracks"></div>
     </section>
 
     <!-- 音源管理页 -->

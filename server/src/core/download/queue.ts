@@ -15,6 +15,8 @@ import { config } from '../config.js'
 import { logger } from '../logger.js'
 import type { MusicInfo } from '../adapters/common.js'
 import type { Quality } from '../source-engine/lx-env.js'
+import path from 'node:path'
+import fs from 'node:fs'
 
 export interface EnqueueInput {
   platform: string
@@ -22,6 +24,7 @@ export interface EnqueueInput {
   quality: Quality
   primarySourceId?: string
   sourceIds?: string[]
+  libraryUpgrade?: { trackId: string }
 }
 
 function toTaskView(row: DownloadTaskRow) {
@@ -136,7 +139,7 @@ class DownloadQueue extends EventEmitter {
       const lyric = lyricRes?.lyric ?? null
 
       // 3) 下载 + 元数据（标题/歌手/专辑仍用原曲信息，保持用户搜索预期；封面/歌词用实际命中源）
-      const outcome = await downloader.download(
+      let outcome = await downloader.download(
         result.url,
         result.quality,
         {
@@ -151,7 +154,19 @@ class DownloadQueue extends EventEmitter {
           taskStore.update(id, { progress: percent })
           this.emit('task:progress', { id, received, total, percent })
         },
+        input.libraryUpgrade ? path.join(config.download.dir, '.ro-upgrades', 'staging', id) : undefined,
       )
+
+      if (input.libraryUpgrade && taskStore.get(id)?.status === 'canceled') {
+        await fs.promises.rm(outcome.filePath, { force: true }).catch(() => undefined)
+        return
+      }
+
+      if (input.libraryUpgrade) {
+        const { finalizeLibraryUpgrade } = await import('../library/upgrade.js')
+        const finalized = await finalizeLibraryUpgrade(input.libraryUpgrade.trackId, outcome.filePath)
+        outcome = { ...outcome, ...finalized, warnings: [...outcome.warnings, ...finalized.warnings] }
+      }
 
       // 换源提示先入 warnings，再判定最终状态（换源本身即视为 with_warnings）
       if (result.toggled) outcome.warnings.push(`跨平台换源：${input.platform} → ${result.platform}（原平台取 URL 失败，自动换到同款歌曲）`)
@@ -168,6 +183,10 @@ class DownloadQueue extends EventEmitter {
       logger.info({ id, status: finalStatus, file: outcome.filePath, quality: result.quality, source: result.sourceId }, '[queue] done')
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err)
+      if (input.libraryUpgrade) {
+        const { libraryStore } = await import('../db/library.js')
+        libraryStore.update(input.libraryUpgrade.trackId, { upgrade_status: 'failed', upgrade_reason: error })
+      }
       this.setStatus(id, 'failed', { error })
       logger.error({ id, error }, '[queue] failed')
     }
@@ -177,6 +196,12 @@ class DownloadQueue extends EventEmitter {
     const row = taskStore.get(id)
     if (!row) return false
     if (row.status === 'pending' || row.status === 'active') {
+      const input = JSON.parse(row.music_info) as EnqueueInput
+      if (input.libraryUpgrade) {
+        void import('../db/library.js').then(({ libraryStore }) => {
+          libraryStore.update(input.libraryUpgrade!.trackId, { upgrade_status: 'failed', upgrade_reason: '升级任务已取消' })
+        })
+      }
       this.setStatus(id, 'canceled')
       return true
     }
@@ -187,6 +212,12 @@ class DownloadQueue extends EventEmitter {
     const row = taskStore.get(id)
     if (!row) return false
     if (row.status === 'failed' || row.status === 'canceled' || row.status === 'completed_with_warnings') {
+      const input = JSON.parse(row.music_info) as EnqueueInput
+      if (input.libraryUpgrade) {
+        void import('../db/library.js').then(({ libraryStore }) => {
+          libraryStore.update(input.libraryUpgrade!.trackId, { upgrade_status: 'queued', upgrade_reason: `升级任务 ${id} 已重新入队` })
+        })
+      }
       taskStore.update(id, { status: 'pending', progress: 0, error: null, warnings: null })
       this.schedule(id)
       return true

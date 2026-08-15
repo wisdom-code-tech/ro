@@ -75,12 +75,57 @@ export function initDb(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON download_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_tasks_created ON download_tasks(created_at);
+
+    CREATE TABLE IF NOT EXISTS library_tracks (
+      id TEXT PRIMARY KEY,
+      file_path TEXT NOT NULL UNIQUE,
+      file_name TEXT NOT NULL,
+      format TEXT NOT NULL,
+      codec TEXT,
+      title TEXT,
+      artist TEXT,
+      album TEXT,
+      duration REAL,
+      bitrate INTEGER,
+      sample_rate INTEGER,
+      bit_depth INTEGER,
+      file_size INTEGER NOT NULL,
+      file_mtime INTEGER NOT NULL,
+      quality_tier TEXT NOT NULL,
+      upgrade_status TEXT NOT NULL DEFAULT 'none',
+      upgrade_reason TEXT,
+      matched_platform TEXT,
+      matched_music_info TEXT,
+      last_scanned_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_format ON library_tracks(format);
+    CREATE INDEX IF NOT EXISTS idx_library_quality ON library_tracks(quality_tier);
+    CREATE INDEX IF NOT EXISTS idx_library_upgrade ON library_tracks(upgrade_status);
+
+    CREATE TABLE IF NOT EXISTS library_scans (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      root_dir TEXT NOT NULL,
+      total_files INTEGER NOT NULL DEFAULT 0,
+      scanned_files INTEGER NOT NULL DEFAULT 0,
+      added_files INTEGER NOT NULL DEFAULT 0,
+      updated_files INTEGER NOT NULL DEFAULT 0,
+      unchanged_files INTEGER NOT NULL DEFAULT 0,
+      removed_files INTEGER NOT NULL DEFAULT 0,
+      failed_files INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_scans_started ON library_scans(started_at);
   `)
   logger.info(`SQLite ready at ${dbPath}`)
   return db
 }
 
-function getDb(): Database.Database {
+export function getDb(): Database.Database {
   return db ?? initDb()
 }
 

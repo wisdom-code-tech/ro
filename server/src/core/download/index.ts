@@ -133,10 +133,11 @@ export const downloader = {
     meta: DownloadMeta,
     musicInfo: MusicInfo,
     onProgress?: DownloadProgress,
+    destinationDir?: string,
   ): Promise<DownloadOutcome> {
     void musicInfo
     const warnings: string[] = []
-    const dir = config.download.dir
+    const dir = destinationDir ?? config.download.dir
     fs.mkdirSync(dir, { recursive: true })
 
     const baseName = renderName(config.download.nameTemplate, meta) || `${meta.name} - ${meta.singer}`

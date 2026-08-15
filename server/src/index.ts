@@ -12,6 +12,7 @@ import { sourceRoutes } from './routes/sources.js'
 import { playlistRoutes } from './routes/playlists.js'
 import { settingsRoutes } from './routes/settings.js'
 import { healthRoutes } from './routes/health.js'
+import { libraryRoutes } from './routes/library.js'
 import { authRoutes, registerAuthGuard } from './routes/auth.js'
 import { createRateLimiter } from './core/rate-limit.js'
 import { startSmokeScheduler } from './core/smoke/scheduler.js'
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   await app.register(playlistRoutes)
   await app.register(settingsRoutes)
   await app.register(healthRoutes)
+  await app.register(libraryRoutes)
 
   // Web 后台静态资源（web/ 目录），放最后避免抢占 /api 路由
   await app.register(fastifyStatic, {

@@ -19,6 +19,7 @@ Ro 的完整 HTTP API 参考。所有接口以 `/api/v1` 为前缀，返回 `app
 - [5. 设置 Settings](#5-设置-settings)
 - [6. 实时事件 SSE](#6-实时事件-sse)
 - [7. 状态 Status](#7-状态-status)
+- [8. 音乐库 Library](#8-音乐库-library)
 - [错误约定](#错误约定)
 - [完整调用示例：搜索→下载→追踪](#完整调用示例搜索下载追踪)
 
@@ -403,6 +404,54 @@ es.addEventListener('task:completed', e => console.log('完成', JSON.parse(e.da
 > 开启鉴权时未授权访问返回 `401`（healthcheck 视 401 为「存活」，仅连接失败判宕机）。
 
 ---
+
+## 8. 音乐库 Library
+
+音乐库默认递归扫描 `download.dir`，只收录 MP3 和 FLAC，并忽略内部的 `.ro-upgrades` 暂存与备份目录。
+
+### POST /api/v1/library/scan
+
+异步启动增量扫描。响应 `202 { "status": "running" }`；已有扫描运行时响应 `409`。文件大小和修改时间未变化的文件不会重复解析。
+
+### GET /api/v1/library/scan/current
+
+返回当前运行状态和最近一次扫描统计：总数、已扫描、新增、更新、未变化、移除和失败数。
+
+### GET /api/v1/library/stats
+
+返回音乐库汇总：`total`、`mp3`、`flac`、`recommended`、`unknown`、`hires`。
+
+### GET /api/v1/library/tracks
+
+支持以下 Query 参数：
+
+| 参数 | 说明 |
+|---|---|
+| `format` | `mp3` / `flac` |
+| `qualityTier` | `lossy_low` / `lossy_standard` / `lossy_high` / `lossless_cd` / `lossless_hires` / `unknown` |
+| `upgradeStatus` | `none` / `recommended` / `matched` / `queued` / `upgraded` / `failed` |
+| `keyword` | 匹配标题、歌手、专辑或文件名 |
+| `limit` / `offset` | 分页，limit 最大 500 |
+
+### POST /api/v1/library/tracks/:id/match
+
+请求体为空对象时聚合搜索候选；最高候选评分达到 `0.85` 时自动保存匹配，否则返回最多 10 个候选供人工选择。
+
+也可明确保存某个候选：
+
+```json
+{ "platform": "kw", "musicInfo": { "name": "歌曲", "singer": "歌手", "songmid": "123", "source": "kw" } }
+```
+
+### POST /api/v1/library/tracks/:id/upgrade
+
+对已匹配曲目提交安全升级任务：
+
+```json
+{ "quality": "flac" }
+```
+
+`quality` 只允许 `flac` 或 `flac24bit`。新文件先下载到 `.ro-upgrades/staging`，只有品质确实提升且时长误差不超过 3 秒或 3% 时才替换；原文件移动到 `.ro-upgrades/backup`。校验失败不会修改原文件。
 
 ## 错误约定
 

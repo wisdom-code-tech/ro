@@ -8,6 +8,9 @@ const state = {
   selected: new Set(), // 选中项 key
   quality: 'flac',
   tasksTimer: null,
+  libraryTimer: null,
+  libraryTracks: [],
+  librarySelected: new Set(),
 }
 
 const PLATFORM_NAME = { kw: '酷我', kg: '酷狗', tx: 'QQ音乐', wy: '网易云', mg: '咪咕' }
@@ -34,6 +37,8 @@ $$('.tab').forEach((tab) => {
     $(`#view-${name}`).classList.add('active')
     if (name === 'tasks') { loadTasks(); startTasksPolling() }
     else stopTasksPolling()
+    if (name === 'library') loadLibrary()
+    else stopLibraryPolling()
     if (name === 'sources') loadSources()
     if (name === 'playlists') loadPlaylists()
     if (name === 'settings') loadSettings()
@@ -445,6 +450,190 @@ function startTasksPolling() {
 }
 function stopTasksPolling() {
   if (state.tasksTimer) { clearInterval(state.tasksTimer); state.tasksTimer = null }
+}
+
+// ---------- 音乐库 ----------
+const QUALITY_LABEL = {
+  lossy_low: '低品质 MP3', lossy_standard: '普通 MP3', lossy_high: '高品质 MP3',
+  lossless_cd: 'CD 无损', lossless_hires: 'Hi-Res', unknown: '未知',
+}
+const UPGRADE_LABEL = {
+  none: '无需升级', recommended: '建议升级', matched: '已匹配', queued: '升级中',
+  upgraded: '已升级', failed: '升级失败',
+}
+
+$('#scan-library').addEventListener('click', async () => {
+  try {
+    await fetchJSON('/api/v1/library/scan', { method: 'POST' })
+    toast('音乐库扫描已启动')
+    startLibraryPolling()
+    loadLibraryScan()
+  } catch (err) { toast(err.message) }
+})
+$('#refresh-library').addEventListener('click', loadLibrary)
+;['#library-format', '#library-quality', '#library-upgrade-status'].forEach((sel) => $(sel).addEventListener('change', loadLibraryTracks))
+let libraryKeywordTimer
+$('#library-keyword').addEventListener('input', () => {
+  clearTimeout(libraryKeywordTimer)
+  libraryKeywordTimer = setTimeout(loadLibraryTracks, 250)
+})
+
+$('#library-check-all').addEventListener('change', (e) => {
+  for (const track of state.libraryTracks) {
+    if (e.target.checked) state.librarySelected.add(track.id)
+    else state.librarySelected.delete(track.id)
+  }
+  $$('#library-tracks input[data-library-check]').forEach((cb) => { cb.checked = e.target.checked })
+  updateLibrarySelected()
+})
+
+$('#library-batch-upgrade').addEventListener('click', async () => {
+  const tracks = state.libraryTracks.filter((track) => state.librarySelected.has(track.id))
+  if (!tracks.length) return
+  if (!confirm(`将匹配并升级 ${tracks.length} 首歌曲。只有自动匹配分数达到 0.85 的歌曲会提交，是否继续？`)) return
+  const button = $('#library-batch-upgrade')
+  button.disabled = true
+  let queued = 0
+  let skipped = 0
+  const quality = $('#library-target-quality').value
+  for (const track of tracks) {
+    try {
+      let matched = !!track.matchedMusicInfo
+      if (!matched) {
+        const result = await fetchJSON(`/api/v1/library/tracks/${track.id}/match`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        })
+        matched = result.autoMatched || !!result.track?.matchedMusicInfo
+      }
+      if (!matched) { skipped++; continue }
+      await fetchJSON(`/api/v1/library/tracks/${track.id}/upgrade`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quality }),
+      })
+      queued++
+    } catch { skipped++ }
+  }
+  toast(`已提交 ${queued} 首，跳过 ${skipped} 首`)
+  state.librarySelected.clear()
+  updateLibrarySelected()
+  loadLibrary()
+})
+
+async function loadLibrary() {
+  await Promise.all([loadLibraryStats(), loadLibraryTracks(), loadLibraryScan()])
+}
+
+async function loadLibraryStats() {
+  try {
+    const s = await fetchJSON('/api/v1/library/stats')
+    const cards = [['total', '总文件'], ['mp3', 'MP3'], ['flac', 'FLAC'], ['recommended', '建议升级'], ['hires', 'Hi-Res'], ['unknown', '未知']]
+    $('#library-stats').innerHTML = cards.map(([key, label]) => `<div class="stat-card"><b>${s[key] || 0}</b><span>${label}</span></div>`).join('')
+  } catch (err) { $('#library-stats').innerHTML = `<div class="empty">${escapeHtml(err.message)}</div>` }
+}
+
+async function loadLibraryScan() {
+  try {
+    const r = await fetchJSON('/api/v1/library/scan/current')
+    const s = r.scan
+    if (!s) { $('#library-scan-status').textContent = '尚未扫描音乐库'; return }
+    const progress = s.total_files ? Math.round(s.scanned_files / s.total_files * 100) : 0
+    $('#library-scan-status').textContent = r.running
+      ? `扫描中 ${s.scanned_files}/${s.total_files} (${progress}%) · 新增 ${s.added_files} · 更新 ${s.updated_files} · 失败 ${s.failed_files}`
+      : `上次扫描：${new Date(s.started_at).toLocaleString('zh-CN')} · 共 ${s.total_files} · 新增 ${s.added_files} · 更新 ${s.updated_files} · 移除 ${s.removed_files} · 失败 ${s.failed_files}`
+    if (r.running) startLibraryPolling()
+    else stopLibraryPolling()
+  } catch (err) { $('#library-scan-status').textContent = `扫描状态加载失败: ${err.message}` }
+}
+
+async function loadLibraryTracks() {
+  const params = new URLSearchParams({ limit: '200' })
+  const filters = [['format', '#library-format'], ['qualityTier', '#library-quality'], ['upgradeStatus', '#library-upgrade-status'], ['keyword', '#library-keyword']]
+  for (const [key, selector] of filters) { const value = $(selector).value.trim(); if (value) params.set(key, value) }
+  try {
+    const r = await fetchJSON(`/api/v1/library/tracks?${params}`)
+    state.libraryTracks = r.tracks || []
+    renderLibraryTracks(state.libraryTracks, r.total)
+  } catch (err) { $('#library-tracks').innerHTML = `<div class="empty">加载失败: ${escapeHtml(err.message)}</div>` }
+}
+
+function renderLibraryTracks(tracks, total) {
+  if (!tracks.length) { $('#library-tracks').innerHTML = '<div class="empty">暂无音乐文件，请先扫描音乐库</div>'; return }
+  const rows = tracks.map((track) => {
+    const kbps = track.bitrate ? `${Math.round(track.bitrate / 1000)}kbps` : '—'
+    const spec = track.format === 'flac'
+      ? `${track.bitDepth || '?'}bit / ${track.sampleRate ? (track.sampleRate / 1000).toFixed(1) : '?'}kHz`
+      : kbps
+    const actions = `<button data-library-match="${track.id}">${track.matchedMusicInfo ? '重新匹配' : '匹配'}</button> ` +
+      `<button data-library-upgrade="${track.id}" ${track.matchedMusicInfo ? '' : 'disabled'}>升级</button>`
+    return `<tr>
+      <td class="chk"><input type="checkbox" data-library-check="${track.id}" ${state.librarySelected.has(track.id) ? 'checked' : ''}></td>
+      <td><b>${escapeHtml(track.title || track.fileName)}</b><div>${escapeHtml(track.artist || '未知歌手')}</div><span class="path" title="${escapeHtml(track.filePath)}">${escapeHtml(track.filePath)}</span></td>
+      <td><span class="badge">${track.format.toUpperCase()}</span></td>
+      <td>${spec}</td>
+      <td><span class="badge quality ${track.qualityTier}">${QUALITY_LABEL[track.qualityTier] || track.qualityTier}</span></td>
+      <td title="${escapeHtml(track.upgradeReason || '')}">${UPGRADE_LABEL[track.upgradeStatus] || track.upgradeStatus}</td>
+      <td class="act">${actions}</td>
+    </tr>`
+  }).join('')
+  $('#library-tracks').innerHTML = `<div class="status">显示 ${tracks.length} / ${total} 首</div><table><thead><tr>
+    <th class="chk"></th><th>歌曲</th><th>格式</th><th>参数</th><th>品质</th><th>升级状态</th><th>操作</th>
+  </tr></thead><tbody>${rows}</tbody></table>`
+  $$('#library-tracks [data-library-check]').forEach((cb) => cb.addEventListener('change', () => {
+    if (cb.checked) state.librarySelected.add(cb.dataset.libraryCheck)
+    else state.librarySelected.delete(cb.dataset.libraryCheck)
+    updateLibrarySelected()
+  }))
+  $$('#library-tracks [data-library-match]').forEach((button) => button.addEventListener('click', () => matchLibraryTrack(button.dataset.libraryMatch)))
+  $$('#library-tracks [data-library-upgrade]').forEach((button) => button.addEventListener('click', () => upgradeLibraryTrack(button.dataset.libraryUpgrade)))
+  updateLibrarySelected()
+}
+
+async function matchLibraryTrack(id) {
+  toast('正在聚合搜索匹配歌曲…')
+  try {
+    const result = await fetchJSON(`/api/v1/library/tracks/${id}/match`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })
+    if (result.autoMatched) {
+      toast(`已自动匹配，得分 ${result.candidates[0].score}`)
+    } else if (result.candidates.length) {
+      const choices = result.candidates.slice(0, 5).map((item, index) => `${index + 1}. ${item.musicInfo.name} - ${item.musicInfo.singer} [${PLATFORM_NAME[item.platform]}] 得分 ${item.score}`).join('\n')
+      const selected = parseInt(prompt(`自动匹配未达到阈值，请选择候选序号（取消则不保存）：\n${choices}`) || '', 10) - 1
+      const candidate = result.candidates[selected]
+      if (!candidate) return
+      await fetchJSON(`/api/v1/library/tracks/${id}/match`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: candidate.platform, musicInfo: candidate.musicInfo }),
+      })
+      toast('已保存人工选择的匹配')
+    } else toast('没有找到候选歌曲')
+    loadLibraryTracks()
+  } catch (err) { toast(`匹配失败: ${err.message}`) }
+}
+
+async function upgradeLibraryTrack(id) {
+  const quality = $('#library-target-quality').value
+  if (!confirm(`确认下载 ${quality} 音源？校验通过后原文件会移入备份目录。`)) return
+  try {
+    await fetchJSON(`/api/v1/library/tracks/${id}/upgrade`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quality }),
+    })
+    toast('升级任务已提交，可在下载任务页查看进度')
+    loadLibraryTracks()
+  } catch (err) { toast(`提交失败: ${err.message}`) }
+}
+
+function updateLibrarySelected() {
+  const count = state.librarySelected.size
+  $('#library-selected-count').textContent = `已选 ${count} 首`
+  $('#library-batch-upgrade').disabled = count === 0
+}
+
+function startLibraryPolling() {
+  if (state.libraryTimer) return
+  state.libraryTimer = setInterval(() => { loadLibraryScan(); loadLibraryStats(); loadLibraryTracks() }, 2000)
+}
+function stopLibraryPolling() {
+  if (state.libraryTimer) { clearInterval(state.libraryTimer); state.libraryTimer = null }
 }
 
 // ---------- 音源管理 ----------

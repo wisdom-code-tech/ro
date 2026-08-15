@@ -5,6 +5,7 @@
 import { EventEmitter } from 'node:events'
 import { downloadQueue } from './download/queue.js'
 import { sourceEngine } from './source-engine/index.js'
+import { libraryScanner } from './library/scanner.js'
 
 export interface RoEvent {
   event: string
@@ -40,6 +41,12 @@ export function wireEvents(): void {
     'task:canceled',
   ])
   forward(sourceEngine, ['source:changed', 'source:update-alert'])
+  forward(libraryScanner, [
+    'library:scan-started',
+    'library:scan-progress',
+    'library:scan-completed',
+    'library:scan-failed',
+  ])
 }
 
 /** 冒烟测试等其他模块可直接往总线发事件（阶段 6 用） */
