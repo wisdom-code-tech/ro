@@ -42,6 +42,28 @@ export interface RoConfig {
 
 const CONFIG_PATH = process.env.RO_CONFIG ?? path.join(ROOT_DIR, 'config.yaml')
 
+function readConfigFile(): string {
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(CONFIG_PATH)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(
+        `配置文件不存在：${CONFIG_PATH}。请先从 config.example.yaml 创建 config.yaml，再启动服务。`,
+      )
+    }
+    throw error
+  }
+
+  if (!stat.isFile()) {
+    throw new Error(
+      `配置路径不是文件：${CONFIG_PATH}。如果使用 Docker，请删除误创建的 config.yaml 目录，并从 config.example.yaml 创建同名文件。`,
+    )
+  }
+
+  return fs.readFileSync(CONFIG_PATH, 'utf8')
+}
+
 function applyEnvOverrides(cfg: RoConfig): void {
   // RO_SERVER_PORT / RO_SERVER_HOST / RO_AUTH_APIKEY / RO_LOG_LEVEL 等简单覆盖
   if (process.env.RO_SERVER_PORT) cfg.server.port = Number(process.env.RO_SERVER_PORT)
@@ -51,7 +73,7 @@ function applyEnvOverrides(cfg: RoConfig): void {
 }
 
 export function loadConfig(): RoConfig {
-  const raw = fs.readFileSync(CONFIG_PATH, 'utf8')
+  const raw = readConfigFile()
   const cfg = YAML.parse(raw) as RoConfig
   applyEnvOverrides(cfg)
   // 相对路径统一相对项目根目录解析

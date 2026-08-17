@@ -63,6 +63,10 @@ $('#search-form').addEventListener('submit', async (e) => {
   try {
     if (searchType === 'songlist') {
       // 歌单维度搜索
+      if (/^https?:\/\//i.test(keyword)) {
+        await openSongListDetail(platform, keyword, '链接歌单', false)
+        return
+      }
       if (platform === 'aggregate') {
         const r = await fetchJSON(`/api/v1/search/songlist/aggregate?keyword=${encodeURIComponent(keyword)}&page=1`)
         renderSongListAggregate(r)
@@ -134,22 +138,25 @@ function renderSongListGroup(platform, list, error) {
   return group
 }
 
-async function openSongListDetail(platform, id, name) {
+async function openSongListDetail(platform, id, name, showBack = true) {
   $('#search-status').textContent = `加载歌单「${name}」…`
   try {
     const d = await fetchJSON(`/api/v1/search/songlist/detail?platform=${platform}&id=${encodeURIComponent(id)}`)
+    const resolvedPlatform = d.resolvedPlatform || d.source || platform
     // 复用歌曲搜索的渲染 + 批量下载/加歌单能力
     $('#results').innerHTML = ''
     state.results = []
     state.selected.clear()
     updateSelectedCount()
-    const back = document.createElement('button')
-    back.textContent = '← 返回歌单列表'
-    back.className = 'linkbtn'
-    back.style.margin = '4px 0 10px'
-    back.addEventListener('click', () => $('#search-form').dispatchEvent(new Event('submit')))
-    $('#results').appendChild(back)
-    $('#results').appendChild(renderGroup(platform, d.list, null))
+    if (showBack) {
+      const back = document.createElement('button')
+      back.textContent = '← 返回歌单列表'
+      back.className = 'linkbtn'
+      back.style.margin = '4px 0 10px'
+      back.addEventListener('click', () => $('#search-form').dispatchEvent(new Event('submit')))
+      $('#results').appendChild(back)
+    }
+    $('#results').appendChild(renderGroup(resolvedPlatform, d.list, null))
     finalizeSearch(d.list.length)
     $('#search-status').textContent = `${d.info?.name || name} · 共 ${d.list.length} 首（可勾选批量下载 / 加入歌单）`
   } catch (err) {

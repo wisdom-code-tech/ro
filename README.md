@@ -345,7 +345,7 @@ Ro 不内置音源，需导入 lx-music 格式的音源脚本(`.js`)。三种方
 | GET | `/search/aggregate?keyword=晴天&platforms=kw,wy&page=1` | 聚合搜索（`platforms` 省略=全平台）|
 | GET | `/search/songlist?keyword=周杰伦&platform=kw&page=1` | 单平台歌单搜索 |
 | GET | `/search/songlist/aggregate?keyword=周杰伦&page=1` | 聚合歌单搜索 |
-| GET | `/search/songlist/detail?platform=kw&id=<歌单ID>&page=1` | 歌单详情（含歌曲列表）|
+| GET | `/search/songlist/detail?platform=kw&id=<歌单ID或官方链接>&page=1` | 歌单详情（含歌曲列表；链接可自动识别平台）|
 
 ### 下载 / 任务 Download
 
@@ -582,6 +582,20 @@ Ro 的原始定位是**纯个人自用 / 局域网部署**。如何暴露取决�
 ---
 
 ## 常见问题 / 排错
+
+**Q: 启动时报 `EISDIR: illegal operation on a directory, read`？**  
+A: 宿主机缺少 `config.yaml` 时，旧版 Docker 挂载写法可能把它创建成目录。请在项目根目录执行：
+
+```bash
+docker compose down
+# 确认当前路径是项目根目录后再删除这个误创建的空目录
+rmdir config.yaml
+cp config.example.yaml config.yaml
+# 编辑 config.yaml，至少修改默认登录密码
+docker compose up -d --build
+```
+
+新版 `compose.yaml` 已禁止 Docker 在配置文件缺失时自动创建目录，会在启动阶段直接指出源文件不存在。
 
 **Q: `docker compose build` 报 `npm error disturl is not a valid npm option`？**
 A: node22 自带的 npm10+ 已移除 `disturl` 配置项。Dockerfile 已改用环境变量 `ENV npm_config_disturl=...` 注入给 node-gyp，重新拉取最新 Dockerfile 即可。

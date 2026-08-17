@@ -14,7 +14,12 @@ services:
       RO_SERVER_PORT: "23330"
     volumes:
       # 配置文件（用户名/密码/apiKey/各项设置都在这里）→ 映射到宿主机，改完重启容器即生效
-      - ./config.yaml:/app/config.yaml
+      - type: bind
+        source: ./config.yaml
+        target: /app/config.yaml
+        bind:
+          # 缺少宿主机文件时直接报错，避免 Docker 静默创建 config.yaml 目录
+          create_host_path: false
       # 下载目录 → 宿主机，下载的音乐文件直接落到这里
       - ./data/downloads:/app/data/downloads
       # 音源目录 → 宿主机，放 lx-music 音源脚本(.js)

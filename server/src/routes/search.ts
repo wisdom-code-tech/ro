@@ -5,6 +5,7 @@
  */
 import type { FastifyInstance } from 'fastify'
 import { searchService, isPlatform, ALL_PLATFORMS, type Platform } from '../core/search/index.js'
+import { parseSongListUrl } from '../core/search/song-list-input.js'
 
 interface SearchQuery {
   keyword?: string
@@ -71,8 +72,11 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: SongListDetailQuery }>('/api/v1/search/songlist/detail', async (req, reply) => {
     const { platform = 'kw', id, page = '1' } = req.query
     if (!id) return reply.code(400).send({ error: 'id is required' })
-    if (!isPlatform(platform)) return reply.code(400).send({ error: `unknown platform: ${platform}`, valid: ALL_PLATFORMS })
-    const result = await searchService.getSongListDetail(platform, id, parseInt(page) || 1)
-    return result
+    const parsedUrl = parseSongListUrl(id)
+    const resolvedPlatform = parsedUrl?.platform ?? platform
+    const resolvedId = parsedUrl?.id ?? id
+    if (!isPlatform(resolvedPlatform)) return reply.code(400).send({ error: `unknown platform: ${resolvedPlatform}`, valid: ALL_PLATFORMS })
+    const result = await searchService.getSongListDetail(resolvedPlatform, resolvedId, parseInt(page) || 1)
+    return { ...result, resolvedPlatform }
   })
 }

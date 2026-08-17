@@ -148,7 +148,7 @@ curl -b cookie.txt 'http://127.0.0.1:23330/api/v1/search/aggregate?keyword=月�
 
 获取歌单详情（含歌曲列表，可逐首或整单下载）。
 
-**Query 参数**：`platform`(默认kw)、`id`(必填，歌单 ID)、`page`(默认1)。
+**Query 参数**：`platform`(默认kw)、`id`(必填，歌单 ID 或官方歌单链接)、`page`(默认1)。传入支持的官方链接时会自动识别平台，并在响应中返回 `resolvedPlatform`。
 
 ```bash
 curl -b cookie.txt 'http://127.0.0.1:23330/api/v1/search/songlist/detail?platform=kw&id=123456&page=1'
